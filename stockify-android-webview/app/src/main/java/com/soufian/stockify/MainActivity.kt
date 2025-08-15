@@ -1,25 +1,20 @@
 package com.soufian.stockify
 
-import android.Manifest
-import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.ActivityNotFoundException
-import android.content.ClipData
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.MediaStore
-import android.webkit.CookieManager
+import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
 import java.text.SimpleDateFormat
@@ -30,62 +25,71 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
 
-    // For <input type="file">
+    // For <input type="file"> (with optional camera capture)
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraPhotoUri: Uri? = null
 
     private val openFileLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
-            val dataUris: Array<Uri> = when {
-                result.resultCode != RESULT_OK -> emptyArray()
-                result.data == null && cameraPhotoUri != null -> arrayOf(cameraPhotoUri!!)
-                else -> {
-                    val data = result.data!!
-                    val clip: ClipData? = data.clipData
-                    when {
-                        clip != null && clip.itemCount > 0 -> Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
-                        data.data != null -> arrayOf(data.data!!)
-                        else -> emptyArray()
-                    }
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            val uris: Array<Uri> = when {
+                result.resultCode != Activity.RESULT_OK -> emptyArray()
+                // Camera capture (no data intent, just our saved uri)
+                data == null && cameraPhotoUri != null -> arrayOf(cameraPhotoUri!!)
+                // Multiple selection
+                data?.clipData != null -> {
+                    val c = data.clipData!!
+                    Array(c.itemCount) { i -> c.getItemAt(i).uri }
                 }
+                // Single selection
+                data?.data != null -> arrayOf(data.data!!)
+                else -> emptyArray()
             }
-            filePathCallback?.onReceiveValue(dataUris)
+            filePathCallback?.onReceiveValue(uris)
             filePathCallback = null
             cameraPhotoUri = null
         }
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
 
-        // Basic WebView setup
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
+            cacheMode = WebSettings.LOAD_DEFAULT
             allowFileAccess = true
-            allowFileAccessFromFileURLs = true
-            allowUniversalAccessFromFileURLs = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = userAgentString + " StockifyAndroidWebView"
-        }
-        CookieManager.getInstance().setAcceptCookie(true)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+            allowContentAccess = true
+            mediaPlaybackRequiresUserGesture = false
+            javaScriptCanOpenWindowsAutomatically = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         }
 
+        // Keep navigation inside the WebView
         webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                if (url != null) view?.loadUrl(url)
+                return true
             }
         }
 
+        // Grant getUserMedia (camera/mic) and handle file chooser
         webView.webChromeClient = object : WebChromeClient() {
 
-            // Handle <input type="file"> chooser + camera
+            // IMPORTANT: allow the page to access camera via JS getUserMedia
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                if (request == null) return
+                val allowedOrigin = "https://stockifysoufian.netlify.app"
+                if (request.origin.toString() == allowedOrigin) {
+                    request.grant(request.resources)
+                } else {
+                    request.deny()
+                }
+            }
+
+            // File chooser with optional camera capture
             override fun onShowFileChooser(
                 view: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
@@ -93,10 +97,10 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
                 this@MainActivity.filePathCallback = filePathCallback
 
-                // Build camera intent (optional)
+                // Camera intent
+                val cameraIntents = mutableListOf<Intent>()
                 val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
                 val photoFile = createTempImageFile()
-                val cameraIntents = mutableListOf<Intent>()
                 cameraPhotoUri = photoFile?.let {
                     FileProvider.getUriForFile(
                         this@MainActivity,
@@ -106,7 +110,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (cameraPhotoUri != null) {
                     cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri)
-                    cameraIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    cameraIntent.addFlags(
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
                     cameraIntents.add(cameraIntent)
                 }
 
@@ -117,7 +124,6 @@ class MainActivity : AppCompatActivity() {
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 }
 
-                // Create chooser including camera
                 val chooser = Intent(Intent.ACTION_CHOOSER).apply {
                     putExtra(Intent.EXTRA_INTENT, contentIntent)
                     putExtra(Intent.EXTRA_TITLE, "Select file")
@@ -137,29 +143,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Ask for camera permission lazily if needed
-        maybeRequestCamera()
-
-        // Load your site
+        // Load your site (HTTPS)
         webView.loadUrl("https://stockifysoufian.netlify.app/")
-    }
-
-    private fun maybeRequestCamera() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                requestPermissions(arrayOf(Manifest.permission.CAMERA), 10)
-            }
-        }
     }
 
     private fun createTempImageFile(): File? {
         return try {
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val fileName = "IMG_${timeStamp}"
-            val storageDir = cacheDir
-            File.createTempFile(fileName, ".jpg", storageDir)
+            val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+            File.createTempFile("IMG_${timeStamp}_", ".jpg", storageDir)
         } catch (_: Exception) {
             null
         }
