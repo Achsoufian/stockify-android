@@ -277,3 +277,6 @@ class MainActivity : AppCompatActivity() {
         if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
 }
+=======
+}
+>>>>>>> 101820ef56b484c1e33266901a6692e53a4add18
