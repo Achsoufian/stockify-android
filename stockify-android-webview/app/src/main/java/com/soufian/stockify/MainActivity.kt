@@ -1,282 +1,175 @@
 package com.soufian.stockify
 
 import android.Manifest
-import android.app.Activity
+import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
-import android.webkit.*
-import androidx.activity.result.ActivityResultLauncher
+import android.webkit.CookieManager
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
-    private var fileCallback: ValueCallback<Array<Uri>>? = null
-    private var cameraImageUri: Uri? = null
 
-    private lateinit var openDoc: ActivityResultLauncher<Intent>
+    // For <input type="file">
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraPhotoUri: Uri? = null
 
-    private val CAMERA_PERM = Manifest.permission.CAMERA
-    private val READ_PERM =
-        if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES
-        else Manifest.permission.READ_EXTERNAL_STORAGE
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        webView = WebView(this)
-        setContentView(webView)
-
-        // WebView settings
-        with(webView.settings) {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            mediaPlaybackRequiresUserGesture = false
-            allowFileAccess = true
-            allowContentAccess = true
-        }
-
-        // Handle getUserMedia (camera/mic) from page
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onPermissionRequest(request: PermissionRequest) {
-                // Grant camera/mic automatically to the WebView origin
-                request.grant(request.resources)
-            }
-
-            // File chooser for <input type="file">
-            override fun onShowFileChooser(
-                view: WebView?,
-                filePathCallback: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
-            ): Boolean {
-                fileCallback?.onReceiveValue(null)
-                fileCallback = filePathCallback
-
-                // Prepare camera intent
-                val imgFile = createImageFile()
-                cameraImageUri = FileProvider.getUriForFile(
-                    this@MainActivity,
-                    "${packageName}.fileprovider",
-                    imgFile
-                )
-                val takePicture = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                    putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-
-                // Document picker
-                val contentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "*/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "application/*"))
-                }
-
-                // Ask for permissions if needed, then open chooser
-                ensurePermissions {
-                    val chooser = Intent(Intent.ACTION_CHOOSER).apply {
-                        putExtra(Intent.EXTRA_INTENT, contentIntent)
-                        putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(takePicture))
-                        putExtra(Intent.EXTRA_TITLE, "Select file")
-                    }
-                    openDoc.launch(chooser)
-                }
-                return true
-            }
-        }
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                return false // load everything inside the WebView
-            }
-        }
-
-        // Activity result for chooser
-        openDoc = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-            val resultUris: Array<Uri>? = when {
-                res.resultCode != Activity.RESULT_OK -> null
-                res.data == null && cameraImageUri != null -> arrayOf(cameraImageUri!!)
+    private val openFileLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+            val dataUris: Array<Uri> = when {
+                result.resultCode != RESULT_OK -> emptyArray()
+                result.data == null && cameraPhotoUri != null -> arrayOf(cameraPhotoUri!!)
                 else -> {
-                    val data = res.data!!
-                    if (data.clipData != null) {
-                        Array(data.clipData!!.itemCount) { i -> data.clipData!!.getItemAt(i).uri }
-                    } else if (data.data != null) {
-                        arrayOf(data.data!!)
-                    } else null
+                    val data = result.data!!
+                    val clip: ClipData? = data.clipData
+                    when {
+                        clip != null && clip.itemCount > 0 -> Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
+                        data.data != null -> arrayOf(data.data!!)
+                        else -> emptyArray()
+                    }
                 }
             }
-            fileCallback?.onReceiveValue(resultUris)
-            fileCallback = null
-            cameraImageUri = null
-        }
-
-        // Load your site
-        webView.loadUrl("https://stockifysoufian.netlify.app/")
-    }
-
-    private fun ensurePermissions(after: () -> Unit) {
-        val need = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, CAMERA_PERM) != PackageManager.PERMISSION_GRANTED)
-            need += CAMERA_PERM
-        if (ContextCompat.checkSelfPermission(this, READ_PERM) != PackageManager.PERMISSION_GRANTED)
-            need += READ_PERM
-
-        if (need.isEmpty()) {
-            after()
-        } else {
-            ActivityCompat.requestPermissions(this, need.toTypedArray(), 1001)
-            // We’ll call 'after' again from onRequestPermissionsResult if granted
-            pendingAfter = after
-        }
-    }
-
-    private var pendingAfter: (() -> Unit)? = null
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 1001 && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-            pendingAfter?.invoke()
-        } else {
-            // If denied, return null to file chooser so it closes gracefully
-            fileCallback?.onReceiveValue(null)
-            fileCallback = null
-        }
-        pendingAfter = null
-    }
-
-    private fun createImageFile(): File {
-        val time = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val fileName = "IMG_$time.jpg"
-        val dir = getExternalFilesDir("Pictures")!!
-        return File(dir, fileName)
-    }
-
-    override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
-    }
-}                    val c = data.clipData!!
-                    Array(c.itemCount) { i -> c.getItemAt(i).uri }
-                }
-                else -> null
-            }
-            filePathCallback?.onReceiveValue(uris)
+            filePathCallback?.onReceiveValue(dataUris)
             filePathCallback = null
             cameraPhotoUri = null
         }
 
-    // Launcher for runtime permissions
-    private val requestPerms =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { /* no-op */ }
-
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
 
-        val s = webView.settings
-        s.javaScriptEnabled = true
-        s.domStorageEnabled = true
-        s.allowFileAccess = true
-        s.allowContentAccess = true
-        s.mediaPlaybackRequiresUserGesture = false
-
+        // Basic WebView setup
+        with(webView.settings) {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            allowFileAccess = true
+            allowFileAccessFromFileURLs = true
+            allowUniversalAccessFromFileURLs = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            userAgentString = userAgentString + " StockifyAndroidWebView"
+        }
+        CookieManager.getInstance().setAcceptCookie(true)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
-            WebView.setWebContentsDebuggingEnabled(true)
         }
 
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+            }
+        }
 
         webView.webChromeClient = object : WebChromeClient() {
 
-            // Allow getUserMedia (camera/mic) from HTTPS page
-            override fun onPermissionRequest(request: PermissionRequest) {
-                runOnUiThread {
-                    request.grant(request.resources)
-                }
-            }
-
-            // Handle <input type="file"> (gallery/camera)
+            // Handle <input type="file"> chooser + camera
             override fun onShowFileChooser(
-                webView: WebView?,
-                filePathCallback: ValueCallback<Array<Uri>>,
-                fileChooserParams: FileChooserParams
+                view: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
             ): Boolean {
-                this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
 
-                val accept = fileChooserParams.acceptTypes.joinToString(",").lowercase()
-                val wantsImages = accept.contains("image")
-                val captureEnabled = fileChooserParams.isCaptureEnabled
+                // Build camera intent (optional)
+                val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                val photoFile = createTempImageFile()
+                val cameraIntents = mutableListOf<Intent>()
+                cameraPhotoUri = photoFile?.let {
+                    FileProvider.getUriForFile(
+                        this@MainActivity,
+                        "${applicationContext.packageName}.fileprovider",
+                        it
+                    )
+                }
+                if (cameraPhotoUri != null) {
+                    cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri)
+                    cameraIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    cameraIntents.add(cameraIntent)
+                }
 
-                // Intent to choose file(s)
-                val contentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                // Document picker
+                val contentIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
-                    type = if (wantsImages) "image/*" else "*/*"
+                    type = "*/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 }
 
-                // Optional camera intent
-                val chooserIntents = mutableListOf<Intent>()
-                if (captureEnabled && packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
-                    val photoFile = File.createTempFile("camera_", ".jpg", cacheDir)
-                    cameraPhotoUri = FileProvider.getUriForFile(
-                        this@MainActivity,
-                        "${BuildConfig.APPLICATION_ID}.fileprovider",
-                        photoFile
-                    )
-                    val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                        putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri)
-                        addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    chooserIntents.add(takePictureIntent)
-                }
-
+                // Create chooser including camera
                 val chooser = Intent(Intent.ACTION_CHOOSER).apply {
                     putExtra(Intent.EXTRA_INTENT, contentIntent)
-                    if (chooserIntents.isNotEmpty()) {
-                        putExtra(Intent.EXTRA_INITIAL_INTENTS, chooserIntents.toTypedArray())
+                    putExtra(Intent.EXTRA_TITLE, "Select file")
+                    if (cameraIntents.isNotEmpty()) {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, cameraIntents.toTypedArray())
                     }
                 }
 
-                openFileLauncher.launch(chooser)
-                return true
+                return try {
+                    openFileLauncher.launch(chooser)
+                    true
+                } catch (_: ActivityNotFoundException) {
+                    this@MainActivity.filePathCallback?.onReceiveValue(emptyArray())
+                    this@MainActivity.filePathCallback = null
+                    false
+                }
             }
         }
 
-        // Ask runtime camera + media permission (varies by Android version)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPerms.launch(arrayOf(
-                Manifest.permission.CAMERA,
-                Manifest.permission.READ_MEDIA_IMAGES
-            ))
-        } else {
-            requestPerms.launch(arrayOf(
-                Manifest.permission.CAMERA,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            ))
-        }
+        // Ask for camera permission lazily if needed
+        maybeRequestCamera()
 
-        // Load your site (must be HTTPS for getUserMedia)
+        // Load your site
         webView.loadUrl("https://stockifysoufian.netlify.app/")
     }
 
+    private fun maybeRequestCamera() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                requestPermissions(arrayOf(Manifest.permission.CAMERA), 10)
+            }
+        }
+    }
+
+    private fun createTempImageFile(): File? {
+        return try {
+            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val fileName = "IMG_${timeStamp}"
+            val storageDir = cacheDir
+            File.createTempFile(fileName, ".jpg", storageDir)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+        if (this::webView.isInitialized && webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
     }
 }
-=======
-}
->>>>>>> 101820ef56b484c1e33266901a6692e53a4add18
