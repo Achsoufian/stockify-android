@@ -1,26 +1,35 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.soufian.stockify">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Declare camera features as optional so install works on devices without camera -->
-    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Media/files (new + old Android versions) -->
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_IMAGES"
+        android:required="false" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- Camera is optional; app still runs without it -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
 
     <application
-    android:allowBackup="true"
-    android:label="@string/app_name"
-    android:icon="@mipmap/ic_launcher"
-    android:roundIcon="@mipmap/ic_launcher_round"
-    android:supportsRtl="true"
-    android:usesCleartextTraffic="false"
-    android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
+        android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">
 
-        <!-- FileProvider for camera capture -->
+        <!-- FileProvider for file uploads from WebView -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -34,8 +43,9 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
-            android:usesCleartextTraffic="false">
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
+            android:resizeableActivity="true"
+            android:screenOrientation="fullSensor">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
