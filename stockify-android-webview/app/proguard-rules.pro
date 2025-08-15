@@ -1,0 +1,2 @@
+-keep class android.webkit.** { *; }
+-dontwarn android.webkit.**

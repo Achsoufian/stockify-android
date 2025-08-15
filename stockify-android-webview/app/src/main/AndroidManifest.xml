@@ -1,0 +1,21 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application
+      android:allowBackup="true"
+      android:label="Stockify Soufian"
+      android:icon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
+      android:theme="@style/Theme.Stockify">
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:configChanges="orientation|screenSize|keyboard|keyboardHidden|smallestScreenSize|uiMode"
+        android:usesCleartextTraffic="false">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+  </application>
+
+  <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

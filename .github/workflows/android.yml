@@ -1,0 +1,28 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Install Gradle
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 8.7
+      - name: Generate wrapper
+        run: gradle wrapper --gradle-version 8.7
+      - name: Build Debug APK
+        run: ./gradlew :app:assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StockifySoufian-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
