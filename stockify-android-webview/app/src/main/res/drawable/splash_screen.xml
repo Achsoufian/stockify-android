@@ -1,23 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Background color (your blue) -->
+    <!-- Background color -->
     <item android:drawable="@color/splash_background" />
 
-    <!-- Logo with safe insets to prevent cropping -->
+    <!-- Centered app icon with safe padding so it never gets cropped -->
     <item>
         <inset
-            android:insetLeft="64dp"
-            android:insetRight="64dp"
-            android:insetTop="64dp"
-            android:insetBottom="64dp">
+            android:insetLeft="56dp"
+            android:insetRight="56dp"
+            android:insetTop="56dp"
+            android:insetBottom="56dp">
 
+            <!-- Using adaptive app icon keeps proportions consistent -->
             <bitmap
-                android:src="@drawable/splash_logo"
-                android:gravity="center"
-                android:antialias="true"
-                android:filter="false"
-                android:dither="true" />
+                android:src="@mipmap/ic_launcher"
+                android:gravity="center" />
         </inset>
     </item>
 
