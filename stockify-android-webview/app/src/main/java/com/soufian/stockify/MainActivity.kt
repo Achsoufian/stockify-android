@@ -2,27 +2,23 @@ package com.soufian.stockify
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Toast
-import androidx.activity.OnBackPressedCallback
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -36,224 +32,203 @@ import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val HOME_URL = "https://stockifysoufian.netlify.app/"
+        private const val CAMERA_PERMISSION = Manifest.permission.CAMERA
+    }
+
     private lateinit var webView: WebView
     private lateinit var swipeRefresh: SwipeRefreshLayout
 
-    // ====== File upload state ======
-    private var fileCallback: ValueCallback<Array<Uri>>? = null
+    // file upload (incl. camera) state
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraPhotoUri: Uri? = null
 
-    // Replace with your site
-    private val HOME_URL = "https://stockifysoufian.netlify.app/"
-
-    // Ask for runtime permissions (camera + storage) if needed
-    private val runtimePerms =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ -> }
-
-    // Result for chooser (files and/or camera photo)
-    private val fileChooserLauncher =
+    // activity result launcher for file chooser
+    private val pickContent =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res: ActivityResult ->
-            handleFileChooserResult(res)
-        }
+            val callback = filePathCallback
+            filePathCallback = null
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+            if (callback == null) return@registerForActivityResult
 
-        webView = findViewById(R.id.webView)
-        swipeRefresh = findViewById(R.id.swipeRefresh)
-
-        setupSwipeRefresh()
-        setupWebView()
-        requestRuntimePermsIfNeeded()
-
-        if (savedInstanceState == null) {
-            webView.loadUrl(HOME_URL)
-        }
-
-        // Back navigation inside WebView
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (webView.canGoBack()) webView.goBack() else finish()
+            if (res.resultCode != RESULT_OK) {
+                callback.onReceiveValue(null)
+                return@registerForActivityResult
             }
-        })
-    }
 
-    private fun setupSwipeRefresh() {
-        swipeRefresh.setOnRefreshListener { webView.reload() }
-        swipeRefresh.setColorSchemeResources(
-            android.R.color.holo_blue_light,
-            android.R.color.holo_green_light,
-            android.R.color.holo_orange_light
-        )
-    }
+            val data: Intent? = res.data
+
+            // 1) A photo we captured with camera?
+            if (data == null && cameraPhotoUri != null) {
+                callback.onReceiveValue(arrayOf(cameraPhotoUri!!))
+                cameraPhotoUri = null
+                return@registerForActivityResult
+            }
+
+            // 2) One or many files from picker
+            val results = mutableListOf<Uri>()
+            if (data?.clipData != null) {
+                val clip: ClipData = data.clipData!!
+                for (i in 0 until clip.itemCount) {
+                    results.add(clip.getItemAt(i).uri)
+                }
+            } else if (data?.data != null) {
+                results.add(data.data!!)
+            }
+
+            callback.onReceiveValue(if (results.isEmpty()) null else results.toTypedArray())
+        }
+
+    // request CAMERA for the capture intent (not for WebView JS camera getUserMedia — that’s granted in onPermissionRequest)
+    private val requestCameraPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            // If user grants during an active chooser, re-open it:
+            if (granted && filePathCallback != null) openChooser(acceptImagesOnly = true, isCapture = true)
+            else if (!granted) filePathCallback?.onReceiveValue(null)
+        }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun setupWebView() {
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContentView(R.layout.activity_main)
 
+        swipeRefresh = findViewById(R.id.swipeRefresh)
+        webView = findViewById(R.id.webView)
+
+        // WebView setup
+        WebView.setWebContentsDebuggingEnabled(true)
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
             allowFileAccess = true
             allowContentAccess = true
-            useWideViewPort = true
-            loadWithOverviewMode = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             mediaPlaybackRequiresUserGesture = false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            userAgentString = userAgentString + " StockifyAndroidWebView"
         }
 
-        webView.overScrollMode = View.OVER_SCROLL_NEVER
+        CookieManager.getInstance().setAcceptCookie(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        }
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 swipeRefresh.isRefreshing = false
             }
-
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                // Let WebView handle normal http/https
-                return false
-            }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                swipeRefresh.isRefreshing = true
-            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
 
-            // ✅ IMPORTANT: allow in-page camera (web scanner) access
+            // Let in-page barcode scanner/mic use camera/audio
             override fun onPermissionRequest(request: PermissionRequest) {
-                // Grant camera/mic when the page asks (getUserMedia)
-                val resources = request.resources
-                val allowed = resources.filter {
-                    it == PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
-                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
-                }.toTypedArray()
-
-                if (allowed.isNotEmpty()) {
-                    request.grant(allowed)
-                } else {
-                    request.deny()
+                // Grant whatever the page asked for (camera/mic)
+                runOnUiThread {
+                    request.grant(request.resources)
                 }
             }
 
-            // ✅ File upload + camera capture
+            // File input (<input type="file">) handler
             override fun onShowFileChooser(
-                webView: WebView,
+                webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                fileCallback?.onReceiveValue(null) // clean any previous
-                fileCallback = filePathCallback
+                this@MainActivity.filePathCallback = filePathCallback
 
-                // Document picker for Excel/CSV/images
-                val docIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "*/*"
-                    putExtra(
-                        Intent.EXTRA_MIME_TYPES, arrayOf(
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            "application/vnd.ms-excel",
-                            "text/csv",
-                            "image/*"
-                        )
-                    )
-                }
+                val accepts = fileChooserParams.acceptTypes?.joinToString(",")?.lowercase(Locale.US) ?: ""
+                val capture = fileChooserParams.isCaptureEnabled
+                val wantsImagesOnly = accepts.contains("image")
 
-                // Optional camera capture (image/* input with capture)
-                val cameraIntent = makeCameraIntent()
-
-                val chooser = Intent(Intent.ACTION_CHOOSER).apply {
-                    putExtra(Intent.EXTRA_INTENT, docIntent)
-                    cameraIntent?.let {
-                        putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(it))
+                if (capture && wantsImagesOnly) {
+                    // need camera permission for ACTION_IMAGE_CAPTURE
+                    if (ContextCompat.checkSelfPermission(this@MainActivity, CAMERA_PERMISSION)
+                        != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        requestCameraPermission.launch(CAMERA_PERMISSION)
+                        return true
                     }
                 }
 
-                return try {
-                    fileChooserLauncher.launch(chooser)
-                    true
-                } catch (e: ActivityNotFoundException) {
-                    Toast.makeText(this@MainActivity, "No file picker available", Toast.LENGTH_SHORT).show()
-                    fileCallback?.onReceiveValue(null)
-                    fileCallback = null
-                    false
+                openChooser(acceptImagesOnly = wantsImagesOnly, isCapture = capture && wantsImagesOnly)
+                return true
+            }
+        }
+
+        // Pull-to-refresh
+        swipeRefresh.setOnRefreshListener { webView.reload() }
+        swipeRefresh.isRefreshing = true
+        webView.loadUrl(HOME_URL)
+    }
+
+    private fun openChooser(acceptImagesOnly: Boolean, isCapture: Boolean) {
+        val intents = mutableListOf<Intent>()
+
+        // Camera capture
+        if (isCapture) {
+            try {
+                val photoFile = createTempImageFile()
+                val authority = "${BuildConfig.APPLICATION_ID}.fileprovider"
+                cameraPhotoUri = FileProvider.getUriForFile(this, authority, photoFile)
+
+                val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri)
                 }
+                intents.add(captureIntent)
+            } catch (_: Exception) {
+                // fall back to picker only
+                cameraPhotoUri = null
             }
         }
-    }
 
-    private fun requestRuntimePermsIfNeeded() {
-        val needed = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) needed += Manifest.permission.CAMERA
-
-        // Storage isn’t strictly required for SAF, but camera save needs it on older APIs
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED
-            ) needed += Manifest.permission.WRITE_EXTERNAL_STORAGE
+        // Normal picker
+        val pickIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = if (acceptImagesOnly) "image/*" else "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
-        if (needed.isNotEmpty()) runtimePerms.launch(needed.toTypedArray())
-    }
 
-    // ===== Helpers =====
+        val chooser = Intent(Intent.ACTION_CHOOSER).apply {
+            putExtra(Intent.EXTRA_INTENT, pickIntent)
+            if (intents.isNotEmpty()) putExtra(Intent.EXTRA_INITIAL_INTENTS, intents.toTypedArray())
+        }
 
-    private fun makeCameraIntent(): Intent? {
-        return try {
-            val photoFile = createTempImageFile()
-            val authority = "${BuildConfig.APPLICATION_ID}.fileprovider"
-            cameraPhotoUri = FileProvider.getUriForFile(this, authority, photoFile)
-
-            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-        } catch (e: Exception) {
-            null
+        try {
+            pickContent.launch(chooser)
+        } catch (_: ActivityNotFoundException) {
+            // Nothing can handle – cleanly fail
+            filePathCallback?.onReceiveValue(null)
+            filePathCallback = null
         }
     }
 
     private fun createTempImageFile(): File {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES)!!
-        return File.createTempFile("IMG_${timeStamp}_", ".jpg", storageDir)
+        val fileName = "IMG_${timeStamp}_"
+        val storageDir = cacheDir // no external storage permission needed
+        return File.createTempFile(fileName, ".jpg", storageDir)
     }
 
-    private fun handleFileChooserResult(res: ActivityResult) {
-        val callback = fileCallback ?: return
-        var results: Array<Uri>? = null
-
-        if (res.resultCode == Activity.RESULT_OK) {
-            val data = res.data
-
-            // If user took a photo with camera
-            if (data == null && cameraPhotoUri != null) {
-                results = arrayOf(cameraPhotoUri!!)
-            } else if (data != null) {
-                val clip = data.clipData
-                if (clip != null && clip.itemCount > 0) {
-                    results = Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
-                } else if (data.data != null) {
-                    results = arrayOf(data.data!!)
-                }
-            }
+    override fun onBackPressed() {
+        if (this::webView.isInitialized && webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
         }
-
-        callback.onReceiveValue(results)
-        fileCallback = null
-        cameraPhotoUri = null
-        swipeRefresh.isRefreshing = false
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        fileCallback?.onReceiveValue(null)
-        fileCallback = null
+    // Keep WebView state across config changes (optional; prevents reloads)
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        webView.saveState(outState)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        super.onRestoreInstanceState(savedInstanceState)
+        webView.restoreState(savedInstanceState)
     }
 }
