@@ -1,28 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Network / camera permissions -->
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- For gallery access on Android 13+ -->
+    <!-- Gallery/media (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <!-- For gallery access on Android 12 and below -->
+    <!-- Gallery/media (Android 12 and below) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
     <application
         android:allowBackup="true"
-        android:label="@string/app_name"
+        android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:hardwareAccelerated="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Stockify">
 
-        <!-- Launcher Activity -->
+        <!-- Launcher activity (your WebView app) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -33,7 +33,7 @@
             </intent-filter>
         </activity>
 
-        <!-- FileProvider for camera capture -> cache dir -->
+        <!-- FileProvider (needed for camera capture in file chooser) -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
