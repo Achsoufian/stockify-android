@@ -1,17 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
 
-    <!-- ✅ App theme after splash -->
+    <!-- App theme after splash -->
     <style name="Theme.Stockify" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor">?attr/colorPrimary</item>
     </style>
 
-    <!-- ✅ Splash config for pre-Android 12 (compat attributes without android:) -->
-    <style name="Theme.Stockify.Launcher">
-        <item name="windowSplashScreenBackground">@color/splash_bg</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_app_foreground</item>
-        <item name="postSplashScreenTheme">@style/Theme.Stockify</item>
-        <item name="windowSplashScreenAnimationDuration">400</item>
+    <!-- Pre-Android 12 splash (uses windowBackground) -->
+    <style name="Theme.Stockify.Launcher" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- This drawable paints the bg color and centers your icon -->
+        <item name="android:windowBackground">@drawable/splash_screen</item>
     </style>
 
 </resources>
