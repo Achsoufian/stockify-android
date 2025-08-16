@@ -18,7 +18,6 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -80,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             callback.onReceiveValue(if (results.isEmpty()) null else results.toTypedArray())
         }
 
-    // request CAMERA for the capture intent (not for WebView JS camera getUserMedia — that’s granted in onPermissionRequest)
+    // request CAMERA for native capture (not for JS getUserMedia — that’s via onPermissionRequest)
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             // If user grants during an active chooser, re-open it:
@@ -91,7 +90,6 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
         swipeRefresh = findViewById(R.id.swipeRefresh)
@@ -123,15 +121,14 @@ class MainActivity : AppCompatActivity() {
 
         webView.webChromeClient = object : WebChromeClient() {
 
-            // Let in-page barcode scanner/mic use camera/audio
+            // Allow in-page barcode scanner/mic via getUserMedia
             override fun onPermissionRequest(request: PermissionRequest) {
-                // Grant whatever the page asked for (camera/mic)
                 runOnUiThread {
-                    request.grant(request.resources)
+                    request.grant(request.resources) // grant camera/mic requested by the page
                 }
             }
 
-            // File input (<input type="file">) handler
+            // <input type="file"> handler
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>,
@@ -171,7 +168,7 @@ class MainActivity : AppCompatActivity() {
         if (isCapture) {
             try {
                 val photoFile = createTempImageFile()
-                val authority = "${BuildConfig.APPLICATION_ID}.fileprovider"
+                val authority = "${packageName}.fileprovider" // <-- fix: no BuildConfig
                 cameraPhotoUri = FileProvider.getUriForFile(this, authority, photoFile)
 
                 val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
