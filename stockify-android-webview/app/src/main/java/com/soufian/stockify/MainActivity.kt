@@ -2,15 +2,19 @@ package com.soufian.stockify
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -24,18 +28,37 @@ class MainActivity : AppCompatActivity() {
 
     private val HOME_URL = "https://stockifysoufian.netlify.app/"
 
-    // Camera permission for getUserMedia in WebView
+    // Web getUserMedia camera permission
     private var pendingWebPermission: PermissionRequest? = null
     private val CAMERA_REQ = 1234
 
-    // File chooser (upload)
+    // File upload callback
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
-    private val openFiles = registerForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
-    ) { uris ->
-        fileChooserCallback?.onReceiveValue(uris?.toTypedArray() ?: emptyArray())
-        fileChooserCallback = null
-    }
+
+    // Robust chooser result (handles single/multiple/cancel safely)
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+            val cb = fileChooserCallback
+            fileChooserCallback = null
+
+            if (cb == null) return@registerForActivityResult
+
+            if (result.resultCode != RESULT_OK) {
+                cb.onReceiveValue(emptyArray())
+                return@registerForActivityResult
+            }
+
+            val data = result.data
+            val uris: Array<Uri> = when {
+                data?.clipData != null -> {
+                    val c = data.clipData!!
+                    Array(c.itemCount) { i -> c.getItemAt(i).uri }
+                }
+                data?.data != null -> arrayOf(data.data!!)
+                else -> emptyArray()
+            }
+            cb.onReceiveValue(uris)
+        }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,7 +91,7 @@ class MainActivity : AppCompatActivity() {
 
         webView.webChromeClient = object : WebChromeClient() {
 
-            // Camera/mic permission from web (getUserMedia)
+            // Camera for getUserMedia (barcode scanner, etc.)
             override fun onPermissionRequest(request: PermissionRequest) {
                 runOnUiThread {
                     if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
@@ -92,16 +115,53 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // File uploads from the web page
+            // File uploads from <input type="file">
             override fun onShowFileChooser(
                 webView: WebView,
                 filePathCallback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                fileChooserCallback = filePathCallback
-                val accept = fileChooserParams.acceptTypes.firstOrNull().orEmpty()
-                val mime = if (accept.isNotBlank()) accept else "*/*"
-                openFiles.launch(mime)
+                // store the callback
+                this@MainActivity.fileChooserCallback = filePathCallback
+
+                // Build a robust ACTION_GET_CONTENT intent
+                val acceptTypes = fileChooserParams.acceptTypes
+                val allowMultiple = fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE
+
+                val contentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = if (acceptTypes.isNotEmpty() && acceptTypes[0].isNotBlank())
+                        acceptTypes[0]
+                    else
+                        "*/*"
+                    if (acceptTypes.isNotEmpty()) {
+                        putExtra(Intent.EXTRA_MIME_TYPES, acceptTypes.filter { it.isNotBlank() }.toTypedArray())
+                    }
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+                }
+
+                val chooser = Intent(Intent.ACTION_CHOOSER).apply {
+                    putExtra(Intent.EXTRA_INTENT, contentIntent)
+                    putExtra(Intent.EXTRA_TITLE, "Select file")
+                }
+
+                try {
+                    fileChooserLauncher.launch(chooser)
+                } catch (e: ActivityNotFoundException) {
+                    // Fallback: try OPEN_DOCUMENT
+                    try {
+                        val openDoc = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+                        }
+                        fileChooserLauncher.launch(openDoc)
+                    } catch (_: Exception) {
+                        // Last resort: cancel cleanly to avoid crashes
+                        this@MainActivity.fileChooserCallback?.onReceiveValue(emptyArray())
+                        this@MainActivity.fileChooserCallback = null
+                    }
+                }
                 return true
             }
         }
@@ -112,7 +172,7 @@ class MainActivity : AppCompatActivity() {
             webView.restoreState(savedInstanceState)
         }
 
-        // Ask once up front so scanner works immediately
+        // Ask once so camera works immediately inside WebView
         ensureCameraPermission()
     }
 
@@ -142,6 +202,8 @@ class MainActivity : AppCompatActivity() {
                     req.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE))
                 } else {
                     req.deny()
+                    // Optional: guide user to Settings if permanently denied
+                    // startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
                 }
                 pendingWebPermission = null
             }
