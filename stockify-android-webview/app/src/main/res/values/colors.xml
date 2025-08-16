@@ -2,5 +2,5 @@
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
     <!-- ✅ Splash background (set to your brand color or white) -->
-    <color name="splash_bg">#0B5CF0</color>
+    <color name="splash_bg">#FFFFFF</color>
 </resources>
