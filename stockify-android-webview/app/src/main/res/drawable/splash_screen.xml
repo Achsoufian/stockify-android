@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background color (same as Android 12 splash_bg) -->
+    <item android:drawable="@color/splash_bg"/>
+
+    <!-- Center your app icon -->
+    <item>
+        <bitmap
+            android:src="@mipmap/ic_launcher"
+            android:gravity="center"
+            android:antialias="true" />
+    </item>
+</layer-list>
