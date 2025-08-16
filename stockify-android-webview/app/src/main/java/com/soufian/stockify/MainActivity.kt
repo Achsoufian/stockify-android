@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -35,7 +34,7 @@ class MainActivity : AppCompatActivity() {
     // File upload callback
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
-    // Robust chooser result (handles single/multiple/cancel safely)
+    // Result launcher for file picker
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
             val cb = fileChooserCallback
@@ -91,7 +90,7 @@ class MainActivity : AppCompatActivity() {
 
         webView.webChromeClient = object : WebChromeClient() {
 
-            // Camera for getUserMedia (barcode scanner, etc.)
+            // Camera for getUserMedia
             override fun onPermissionRequest(request: PermissionRequest) {
                 runOnUiThread {
                     if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
@@ -121,43 +120,48 @@ class MainActivity : AppCompatActivity() {
                 filePathCallback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                // store the callback
+                // Remember callback so we can deliver the result
                 this@MainActivity.fileChooserCallback = filePathCallback
 
-                // Build a robust ACTION_GET_CONTENT intent
-                val acceptTypes = fileChooserParams.acceptTypes
-                val allowMultiple = fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE
+                val allowMultiple =
+                    fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE
 
-                val contentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                // Gather accept types, but be tolerant (many file managers ignore strict types)
+                val accept = fileChooserParams.acceptTypes.filter { it.isNotBlank() }.toTypedArray()
+
+                // 1) Primary: ACTION_OPEN_DOCUMENT (SAF) – most reliable on modern Android/MIUI
+                val openDoc = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
-                    type = if (acceptTypes.isNotEmpty() && acceptTypes[0].isNotBlank())
-                        acceptTypes[0]
-                    else
-                        "*/*"
-                    if (acceptTypes.isNotEmpty()) {
-                        putExtra(Intent.EXTRA_MIME_TYPES, acceptTypes.filter { it.isNotBlank() }.toTypedArray())
-                    }
+                    type = if (accept.isNotEmpty()) accept[0] else "*/*"
+                    if (accept.isNotEmpty()) putExtra(Intent.EXTRA_MIME_TYPES, accept)
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
 
+                // 2) Secondary: ACTION_GET_CONTENT – some OEMs only support this well
+                val getContent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = if (accept.isNotEmpty()) accept[0] else "*/*"
+                    if (accept.isNotEmpty()) putExtra(Intent.EXTRA_MIME_TYPES, accept)
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                // Build chooser that offers both options
                 val chooser = Intent(Intent.ACTION_CHOOSER).apply {
-                    putExtra(Intent.EXTRA_INTENT, contentIntent)
+                    putExtra(Intent.EXTRA_INTENT, openDoc)
                     putExtra(Intent.EXTRA_TITLE, "Select file")
+                    putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(getContent))
                 }
 
                 try {
                     fileChooserLauncher.launch(chooser)
-                } catch (e: ActivityNotFoundException) {
-                    // Fallback: try OPEN_DOCUMENT
+                } catch (_: ActivityNotFoundException) {
+                    // Last resort: launch GET_CONTENT directly
                     try {
-                        val openDoc = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-                        }
-                        fileChooserLauncher.launch(openDoc)
+                        fileChooserLauncher.launch(getContent)
                     } catch (_: Exception) {
-                        // Last resort: cancel cleanly to avoid crashes
+                        // Clean cancel so WebView doesn't crash
                         this@MainActivity.fileChooserCallback?.onReceiveValue(emptyArray())
                         this@MainActivity.fileChooserCallback = null
                     }
@@ -202,8 +206,6 @@ class MainActivity : AppCompatActivity() {
                     req.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE))
                 } else {
                     req.deny()
-                    // Optional: guide user to Settings if permanently denied
-                    // startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
                 }
                 pendingWebPermission = null
             }
