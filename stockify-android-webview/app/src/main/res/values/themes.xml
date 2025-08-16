@@ -11,5 +11,13 @@
         <!-- This drawable paints the bg color and centers your icon -->
         <item name="android:windowBackground">@drawable/splash_screen</item>
     </style>
+    <style name="Theme.Stockify" parent="Theme.Material3.DayNight.NoActionBar" />
+
+<!-- Splash theme: instant blue background before layout inflates -->
+<style name="Theme_Stockify_Splash" parent="Theme.Material3.DayNight.NoActionBar">
+    <item name="android:windowBackground">@color/splash_background</item>
+    <item name="android:statusBarColor">@color/splash_background</item>
+    <item name="android:navigationBarColor">@color/splash_background</item>
+</style>
 
 </resources>
