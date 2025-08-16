@@ -6,28 +6,23 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.webkit.CookieManager
-import android.webkit.DownloadListener
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.webkit.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private val HOME_URL = "https://stockifysoufian.netlify.app/"
     private var hasRetriedNoCache = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContentView(R.layout.activity_main)
 
+        swipeRefresh = findViewById(R.id.swipeRefresh)
         webView = findViewById(R.id.webView)
 
         val s = webView.settings
@@ -36,7 +31,7 @@ class MainActivity : AppCompatActivity() {
         s.allowFileAccess = true
         s.allowContentAccess = true
         s.databaseEnabled = true
-        s.cacheMode = WebSettings.LOAD_NO_CACHE   // always no cache
+        s.cacheMode = WebSettings.LOAD_NO_CACHE  // always disable cache
 
         webView.clearCache(true)
         webView.clearHistory()
@@ -67,7 +62,7 @@ class MainActivity : AppCompatActivity() {
 
         webView.webChromeClient = WebChromeClient()
 
-        webView.setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
             val request = DownloadManager.Request(Uri.parse(url))
             request.setMimeType(mimetype)
             val cookies = CookieManager.getInstance().getCookie(url)
@@ -83,9 +78,14 @@ class MainActivity : AppCompatActivity() {
             )
             val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             dm.enqueue(request)
-        })
+        }
 
-        // Initial load
+        // Pull-to-refresh action
+        swipeRefresh.setOnRefreshListener {
+            webView.clearCache(true)
+            webView.reload()
+        }
+
         webView.loadUrl(HOME_URL)
     }
 }
