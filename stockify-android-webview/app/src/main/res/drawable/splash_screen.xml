@@ -6,8 +6,8 @@
     <!-- Center your app icon -->
     <item>
         <bitmap
-            android:src="@mipmap/ic_launcher"
-            android:gravity="center"
-            android:antialias="true" />
+    android:src="@drawable/ic_app_foreground"
+    android:gravity="center"
+    android:antialias="true" />
     </item>
 </layer-list>
