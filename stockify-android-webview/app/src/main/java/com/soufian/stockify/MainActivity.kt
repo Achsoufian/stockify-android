@@ -1,10 +1,11 @@
 package com.soufian.stockify
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.view.View
@@ -25,6 +26,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val HOME_URL = "https://stockifysoufian.netlify.app/"
+        private const val CAMERA_REQ_CODE = 1002
     }
 
     private lateinit var webView: WebView
@@ -33,27 +35,38 @@ class MainActivity : AppCompatActivity() {
     private lateinit var errorView: LinearLayout
     private lateinit var retryBtn: Button
 
-    // file upload state
+    // File chooser state
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraImageUri: Uri? = null
 
-    // chooser result launcher
+    // Launcher for chooser result (gallery/camera)
     private val chooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            var uris: Array<Uri>? = null
-            if (result.resultCode == RESULT_OK) {
-                val data = result.data
-                val picked = data?.data
-                uris = when {
-                    picked != null -> arrayOf(picked)
-                    cameraImageUri != null -> arrayOf(cameraImageUri!!)
-                    else -> null
-                }
-            }
-            filePathCallback?.onReceiveValue(uris)
+            val cb = filePathCallback
             filePathCallback = null
+
+            if (cb == null) return@registerForActivityResult
+
+            val data = result.data
+            val uris: Array<Uri>? = when {
+                result.resultCode != RESULT_OK -> null
+                // camera case (we wrote to EXTRA_OUTPUT)
+                cameraImageUri != null -> arrayOf(cameraImageUri!!)
+                // single picked file
+                data?.data != null -> arrayOf(data.data!!)
+                // multiple picked files
+                data?.clipData != null -> {
+                    val c = data.clipData!!
+                    Array(c.itemCount) { i -> c.getItemAt(i).uri }
+                }
+                else -> null
+            }
+
+            cb.onReceiveValue(uris)
+            cameraImageUri = null
         }
 
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -64,85 +77,116 @@ class MainActivity : AppCompatActivity() {
         errorView = findViewById(R.id.errorView)
         retryBtn = findViewById(R.id.btnRetry)
 
-        // --- WebView settings
+        // --- WebView settings (keep it simple & reliable)
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
+            databaseEnabled = true
             allowFileAccess = true
             allowContentAccess = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             loadsImagesAutomatically = true
             cacheMode = WebSettings.LOAD_DEFAULT
-            // if you ever embed http content under https
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
-        // pull-to-refresh should only trigger when WebView is scrolled to top
+        // Pull-to-refresh (only when WebView is scrolled to top)
         swipeRefresh.setOnChildScrollUpCallback { _, _ -> webView.scrollY > 0 }
         swipeRefresh.setOnRefreshListener { webView.reload() }
 
+        // WebViewClient: page lifecycle + error UI
         webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val url = request.url.toString()
+                return if (url.startsWith("http://") || url.startsWith("https://")) {
+                    false
+                } else {
+                    // open non-http(s) intents externally
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, request.url))
+                    } catch (_: ActivityNotFoundException) {}
+                    true
+                }
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
                 swipeRefresh.isRefreshing = false
                 progress.visibility = View.GONE
                 errorView.visibility = View.GONE
                 webView.visibility = View.VISIBLE
+                super.onPageFinished(view, url)
             }
 
             override fun onReceivedError(
-                view: WebView?,
-                request: WebResourceRequest?,
-                error: WebResourceError?
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError
             ) {
-                if (request?.isForMainFrame == true) showError()
+                if (request.isForMainFrame) showError()
+            }
+
+            // Legacy API (covers some devices)
+            override fun onReceivedError(view: WebView, errorCode: Int, description: String?, failingUrl: String?) {
+                showError()
             }
         }
 
-        // ---- File chooser + camera
+        // WebChromeClient: file chooser (gallery + camera) and basic progress
         webView.webChromeClient = object : WebChromeClient() {
+
             override fun onShowFileChooser(
-                view: WebView?,
+                webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
                 fileChooserParams: FileChooserParams?
             ): Boolean {
-                // ensure previous callbacks are cleaned
+                // Clean any previous callback
                 this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
 
-                // camera permission (needed on some devices)
-                if (ContextCompat.checkSelfPermission(
-                        this@MainActivity,
-                        Manifest.permission.CAMERA
-                    ) != PackageManager.PERMISSION_GRANTED
+                // Camera intent (only if we have permission)
+                val initialIntents = mutableListOf<Intent>()
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA)
+                    == PackageManager.PERMISSION_GRANTED
                 ) {
-                    requestPermissions(arrayOf(Manifest.permission.CAMERA), 1002)
-                    // tell the page to retry once user grants
+                    val cam = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                    try {
+                        val photo = createTempImageFile()
+                        cameraImageUri = FileProvider.getUriForFile(
+                            this@MainActivity,
+                            "${packageName}.fileprovider",
+                            photo
+                        )
+                        cam.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri)
+                        cam.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        initialIntents.add(cam)
+                    } catch (_: Exception) {
+                        cameraImageUri = null
+                    }
+                } else {
+                    // Ask once; user can tap upload again after granting
+                    requestPermissions(arrayOf(Manifest.permission.CAMERA), CAMERA_REQ_CODE)
                 }
 
-                val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).also { intent ->
-                    val photoFile = createTempImageFile()
-                    cameraImageUri = FileProvider.getUriForFile(
-                        this@MainActivity,
-                        "${packageName}.fileprovider",
-                        photoFile
-                    )
-                    intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri)
-                    intent.addFlags(
-                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                }
-
-                val contentTypes = arrayOf("image/*", "application/pdf")
+                // System file picker (accept site hint if provided)
                 val contentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "*/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, contentTypes)
+                    // Pass through acceptTypes if any
+                    fileChooserParams?.acceptTypes?.let { types ->
+                        if (types.isNotEmpty()) putExtra(Intent.EXTRA_MIME_TYPES, types)
+                    }
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, fileChooserParams?.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
                 }
 
                 val chooser = Intent(Intent.ACTION_CHOOSER).apply {
                     putExtra(Intent.EXTRA_INTENT, contentIntent)
                     putExtra(Intent.EXTRA_TITLE, "Select file")
-                    putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(captureIntent))
+                    if (initialIntents.isNotEmpty()) {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, initialIntents.toTypedArray())
+                    }
                 }
 
                 chooserLauncher.launch(chooser)
@@ -150,8 +194,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Retry button
         retryBtn.setOnClickListener { loadHome() }
-        loadHome()
+
+        // First load
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState)
+        } else {
+            loadHome()
+        }
     }
 
     private fun loadHome() {
@@ -168,13 +219,19 @@ class MainActivity : AppCompatActivity() {
         errorView.visibility = View.VISIBLE
     }
 
-    override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+    private fun createTempImageFile(): File {
+        val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val file = File(externalCacheDir ?: cacheDir, "IMG_${ts}.jpg")
+        file.createNewFile()
+        return file
     }
 
-    private fun createTempImageFile(): File {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val imageFileName = "IMG_${timeStamp}.jpg"
-        return File(cacheDir, imageFileName).apply { createNewFile() }
+    override fun onSaveInstanceState(outState: Bundle) {
+        webView.saveState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onBackPressed() {
+        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
 }
