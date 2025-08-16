@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Background stays your brand blue -->
-    <item android:drawable="@color/splash_background"/>
 
-    <!-- Center the logo and keep it crisp -->
-    <item
-        android:gravity="center">
+    <!-- Solid brand background -->
+    <item android:drawable="@color/splash_background" />
+
+    <!-- Center the logo bitmap -->
+    <item>
         <bitmap
-            android:src="@drawable/splash_logo"   <!-- uses drawable-nodpi/splash_logo.png if present -->
+            android:gravity="center"
+            android:src="@drawable/ic_app_foreground"
             android:antialias="true"
-            android:filter="false"                <!-- no blur; keeps it sharp -->
+            android:filter="false"
             android:dither="true" />
     </item>
+
 </layer-list>
