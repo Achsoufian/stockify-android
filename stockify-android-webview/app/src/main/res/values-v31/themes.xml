@@ -1,21 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- App theme for Android 12+ -->
+    <!-- EXISTING: your main app theme (Android 12+) -->
     <style name="Theme.Stockify" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryContainer">@color/purple_700</item>
         <item name="colorOnPrimary">@color/white</item>
-
         <item name="colorSecondary">@color/teal_200</item>
         <item name="colorSecondaryContainer">@color/teal_700</item>
         <item name="colorOnSecondary">@color/black</item>
 
-        <!-- Android 12 splash API -->
+        <!-- Android 12+ splash API (kept here too in case app uses this theme at launch) -->
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
-        <!-- Use your existing PNG so no missing drawable -->
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_app_foreground</item>
         <item name="android:windowSplashScreenIconBackgroundColor">@color/splash_background</item>
+    </style>
+
+    <!-- NEW: Splash theme for Android 12+ (name matches manifest) -->
+    <style name="Theme_Stockify_Splash" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_app_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/splash_background</item>
+        <!-- After splash, hand off to the main theme -->
+        <item name="postSplashScreenTheme">@style/Theme.Stockify</item>
     </style>
 
 </resources>
