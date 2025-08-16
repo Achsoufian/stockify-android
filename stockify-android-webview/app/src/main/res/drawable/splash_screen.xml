@@ -1,17 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Background: your brand blue -->
-    <item android:drawable="@color/splash_background"/>
+    <!-- Background color (your blue) -->
+    <item android:drawable="@color/splash_background" />
 
-    <!-- Center the logo; reuse the existing PNG so it can't be missing -->
+    <!-- Logo with safe insets to prevent cropping -->
     <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@drawable/ic_app_foreground"
-            android:antialias="true"
-            android:filter="false"
-            android:dither="true" />
+        <inset
+            android:insetLeft="64dp"
+            android:insetRight="64dp"
+            android:insetTop="64dp"
+            android:insetBottom="64dp">
+
+            <bitmap
+                android:src="@drawable/splash_logo"
+                android:gravity="center"
+                android:antialias="true"
+                android:filter="false"
+                android:dither="true" />
+        </inset>
     </item>
 
 </layer-list>
