@@ -89,7 +89,7 @@ class MainActivity : AppCompatActivity() {
         s.useWideViewPort = true
         s.loadWithOverviewMode = true
         s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-        s.cacheMode = WebSettings.LOAD_DEFAULT       // <- keep cache available (fixes ERR_CACHE_MISS)
+        s.cacheMode = WebSettings.LOAD_NO_CACHE
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
