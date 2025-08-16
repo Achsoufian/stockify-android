@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Allow WebChromeClient camera capture to save in cache/external-cache -->
-    <cache-path name="cache" path="." />
-    <external-cache-path name="ext_cache" path="." />
+<paths>
+    <!-- temp camera photo in app-specific cache -->
+    <cache-path name="camera_cache" path="." />
+    <!-- optional: pictures in app-specific external files dir -->
+    <external-files-path name="camera_pictures" path="Pictures/" />
 </paths>
