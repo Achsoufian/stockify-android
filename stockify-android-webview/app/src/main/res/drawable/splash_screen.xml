@@ -1,17 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- Solid background -->
-    <item android:drawable="@color/splash_background"/>
-
+    <!-- Fill the screen with your blue -->
+    <item android:drawable="@color/splash_background" />
     <!-- Center the logo and keep it crisp -->
     <item>
         <bitmap
-            android:gravity="center"
             android:src="@drawable/splash_logo"
+            android:gravity="center"
             android:antialias="true"
-            android:filter="false"
-            android:dither="true" />
+            android:dither="true"/>
     </item>
-
 </layer-list>
