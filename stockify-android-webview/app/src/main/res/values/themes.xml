@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- App theme after splash -->
+    <!-- Normal app theme (pre-Android 12) -->
     <style name="Theme.Stockify" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
@@ -9,11 +9,13 @@
         <item name="colorSecondary">@color/teal_200</item>
         <item name="colorSecondaryVariant">@color/teal_700</item>
         <item name="colorOnSecondary">@color/black</item>
+    </style>
 
-        <!-- Old-style splash for Android 11- -->
+    <!-- Splash theme for Android 11- : show your drawable as window background -->
+    <style name="Theme_Stockify_Splash" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@drawable/splash_screen</item>
     </style>
 
-    <!-- Theme used only while the splash is visible (kept for SplashActivity) -->
-    <style name="Theme_Stockify_Splash" parent="Theme.Stockify" />
+    <!-- Optional alias so both versions have a “Post” theme name -->
+    <style name="Theme.Stockify.Post" parent="@style/Theme.Stockify"/>
 </resources>
