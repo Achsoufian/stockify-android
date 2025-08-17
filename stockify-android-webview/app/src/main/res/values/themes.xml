@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Main app theme -->
+    <!-- App theme after splash -->
     <style name="Theme.Stockify" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
@@ -10,16 +10,10 @@
         <item name="colorSecondaryVariant">@color/teal_700</item>
         <item name="colorOnSecondary">@color/black</item>
 
-        <!-- Shows drawable splash on Android 11 and below -->
+        <!-- Old-style splash for Android 11- -->
         <item name="android:windowBackground">@drawable/splash_screen</item>
     </style>
 
-    <!-- Add this back so SplashActivity can set it -->
+    <!-- Theme used only while the splash is visible (kept for SplashActivity) -->
     <style name="Theme_Stockify_Splash" parent="Theme.Stockify" />
-    <!-- (If you prefer explicit background, you could instead do:
-         <style name="Theme_Stockify_Splash" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-             <item name="android:windowBackground">@drawable/splash_screen</item>
-         </style>
-    ) -->
-
 </resources>
