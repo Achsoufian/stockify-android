@@ -2,21 +2,12 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Background color -->
-    <item android:drawable="@color/splash_background" />
+    <item android:drawable="@color/splash_background"/>
 
-    <!-- Centered app icon with safe padding so it never gets cropped -->
+    <!-- Centered logo -->
     <item>
-        <inset
-            android:insetLeft="56dp"
-            android:insetRight="56dp"
-            android:insetTop="56dp"
-            android:insetBottom="56dp">
-
-            <!-- Using adaptive app icon keeps proportions consistent -->
-            <bitmap
-                android:src="@mipmap/ic_launcher"
-                android:gravity="center" />
-        </inset>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/splash_logo" />
     </item>
-
 </layer-list>
